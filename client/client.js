@@ -7,142 +7,54 @@ window.__ModuleLoader__.load({
     const NS = 'game-planner';
     const API_STATE = '/plugins/game-planner/state';
     const API_TOGGLE = '/plugins/game-planner/toggle';
-
-    const ROLES = [
-      {
-        id: 'system',
-        glyph: '系',
-        code: 'SYS',
-        nameKey: 'role.system.name',
-        descKey: 'role.system.desc',
-      },
-      {
-        id: 'combat',
-        glyph: '战',
-        code: 'CBT',
-        nameKey: 'role.combat.name',
-        descKey: 'role.combat.desc',
-      },
-      {
-        id: 'level',
-        glyph: '关',
-        code: 'LVL',
-        nameKey: 'role.level.name',
-        descKey: 'role.level.desc',
-      },
-      {
-        id: 'numeric',
-        glyph: '数',
-        code: 'NUM',
-        nameKey: 'role.numeric.name',
-        descKey: 'role.numeric.desc',
-      },
-      {
-        id: 'economy',
-        glyph: '经',
-        code: 'ECO',
-        nameKey: 'role.economy.name',
-        descKey: 'role.economy.desc',
-      },
-      {
-        id: 'narrative',
-        glyph: '叙',
-        code: 'NAR',
-        nameKey: 'role.narrative.name',
-        descKey: 'role.narrative.desc',
-      },
-      {
-        id: 'engineering',
-        glyph: '程',
-        code: 'TEC',
-        nameKey: 'role.engineering.name',
-        descKey: 'role.engineering.desc',
-      },
-      {
-        id: 'art',
-        glyph: '美',
-        code: 'ART',
-        nameKey: 'role.art.name',
-        descKey: 'role.art.desc',
-      },
-    ];
-
-    const DEFAULT_ENABLED = Object.fromEntries(ROLES.map((role) => [role.id, true]));
+    const POLL_MS = 12_000;
+    const NEW_AGENT_PROMPT =
+      '请帮我新建一个子代理。请引导我输入它的角色名、职责描述和 System Prompt，并帮我在 ~/.dsh/subagents/ 目录下生成对应的 YAML 文件。';
 
     const ZH = {
-      'nav.label': '策划中台',
-      'page.eyebrow': 'GAME PLANNER · SUBAGENT ROSTER',
-      'page.title': '游戏研发策划中台',
-      'page.subtitle':
-        '把 8 位策划子代理收进同一张工作台，按需启用，让系统、战斗、内容与表现从同一个视角协同推进。',
+      'nav.label': 'Agent Hub',
+      'page.eyebrow': 'AGENT HUB · LOCAL ROSTER',
+      'page.title': 'Agent 统合管理台',
+      'page.subtitle': '统合管理与调度本地所有子代理',
       'page.activeUnit': '已启用',
-      'page.saved': '开关状态实时写入 DSH 子代理库（~/.dsh/subagents）。',
-      'page.loading': '正在读取 DSH 子代理库…',
-      'page.error': '同步失败，已回滚：',
+      'page.saved': '开关状态实时写入 DSH 子代理库，列表每 12 秒自动刷新。',
+      'page.loading': '正在扫描 DSH 子代理库…',
+      'page.error': '同步失败：',
+      'page.empty': '还没有子代理，点击下方卡片创建第一个。',
+      'page.refresh': '刷新列表',
+      'page.refreshing': '刷新中…',
       'status.on': '已启用',
       'status.off': '已禁用',
-      'card.ready': '参与策划',
-      'card.paused': '暂未参与',
-      'card.enable': '启用',
-      'card.disable': '禁用',
-      'role.system.name': '系统策划',
-      'role.system.desc': '拆解核心循环与系统边界，定义规则、状态和模块之间的协作方式。',
-      'role.combat.name': '战斗策划',
-      'role.combat.desc': '设计战斗节奏、技能与反馈，让每一次交锋都有清晰的决策与手感。',
-      'role.level.name': '关卡策划',
-      'role.level.desc': '规划空间、敌人与事件节奏，把玩法目标编织成可体验的关卡流程。',
-      'role.numeric.name': '数值策划',
-      'role.numeric.desc': '搭建成长、掉落与难度曲线，用数据校准玩家的投入与回报。',
-      'role.economy.name': '经济策划',
-      'role.economy.desc': '设计资源产出与消耗闭环，维持长期经济稳定与付费体验的平衡。',
-      'role.narrative.name': '叙事策划',
-      'role.narrative.desc': '构建世界观、角色与任务文本，让故事自然嵌入玩家的行动路径。',
-      'role.engineering.name': '程序解析',
-      'role.engineering.desc': '从工程视角拆解需求与系统实现，评估技术方案、依赖与落地风险。',
-      'role.art.name': '美术解析',
-      'role.art.desc': '梳理视觉风格、资产与动效需求，确保美术表达服务玩法与叙事。',
+      'card.ready': '参与调度',
+      'card.paused': '暂未启用',
+      'card.enable': '启用 ',
+      'card.disable': '禁用 ',
+      'card.noDescription': '暂无描述',
+      'card.newTitle': '新建 Agent',
+      'card.newDesc': '打开主对话，按引导填写角色名、职责与 System Prompt。',
     };
 
     const EN = {
-      'nav.label': 'Planning Desk',
-      'page.eyebrow': 'GAME PLANNER · SUBAGENT ROSTER',
-      'page.title': 'Game Development Planning Desk',
-      'page.subtitle':
-        'Eight planning subagents in one workspace. Enable the disciplines you need and keep systems, combat, content and presentation moving together.',
+      'nav.label': 'Agent Hub',
+      'page.eyebrow': 'AGENT HUB · LOCAL ROSTER',
+      'page.title': 'Agent Hub',
+      'page.subtitle': 'Unified management and dispatch for every local subagent.',
       'page.activeUnit': 'active',
-      'page.saved': 'Switch states are written to the DSH subagent roster (~/.dsh/subagents).',
-      'page.loading': 'Reading the DSH subagent roster…',
-      'page.error': 'Sync failed; reverted: ',
+      'page.saved': 'Switches write directly to the DSH subagent roster; the list refreshes every 12 seconds.',
+      'page.loading': 'Scanning the DSH subagent roster…',
+      'page.error': 'Sync failed: ',
+      'page.empty': 'No subagents yet. Use the card below to create the first one.',
+      'page.refresh': 'Refresh',
+      'page.refreshing': 'Refreshing…',
       'status.on': 'Enabled',
       'status.off': 'Disabled',
-      'card.ready': 'On the team',
-      'card.paused': 'Sitting out',
+      'card.ready': 'On dispatch',
+      'card.paused': 'Not enabled',
       'card.enable': 'Enable ',
       'card.disable': 'Disable ',
-      'role.system.name': 'Systems Design',
-      'role.system.desc':
-        'Breaks down the core loop and system boundaries into rules, states and clean module contracts.',
-      'role.combat.name': 'Combat Design',
-      'role.combat.desc':
-        'Shapes combat pacing, abilities and feedback so every encounter offers a clear decision and feel.',
-      'role.level.name': 'Level Design',
-      'role.level.desc':
-        'Plans space, enemies and event pacing to turn gameplay goals into a playable level flow.',
-      'role.numeric.name': 'Numeric Design',
-      'role.numeric.desc':
-        'Builds progression, drop and difficulty curves that keep player investment and reward in balance.',
-      'role.economy.name': 'Economy Design',
-      'role.economy.desc':
-        'Designs resource sinks and sources that keep the long-term economy stable and monetization fair.',
-      'role.narrative.name': 'Narrative Design',
-      'role.narrative.desc':
-        'Builds the world, characters and quest text so the story sits naturally inside player action.',
-      'role.engineering.name': 'Engineering Review',
-      'role.engineering.desc':
-        'Reviews requirements and system implementation for technical risk, dependencies and delivery cost.',
-      'role.art.name': 'Art Review',
-      'role.art.desc':
-        'Maps visual style, asset and motion needs so art direction serves both gameplay and narrative.',
+      'card.noDescription': 'No description',
+      'card.newTitle': 'New Agent',
+      'card.newDesc': 'Open the main chat and follow the prompt to define its role and System Prompt.',
     };
 
     const CSS = `
@@ -161,10 +73,12 @@ window.__ModuleLoader__.load({
         --gp-danger: var(--dsw-alias-state-error-primary);
 
         box-sizing: border-box;
+        display: flex;
         width: 100%;
-        min-height: 100%;
-        overflow: auto;
-        padding: clamp(26px, 4.2vw, 56px) clamp(20px, 4.2vw, 56px) 46px;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+        padding: clamp(24px, 3.8vw, 48px) clamp(20px, 4vw, 56px) 28px;
         color: var(--gp-text);
         background-color: var(--gp-bg);
         background-image: radial-gradient(
@@ -183,23 +97,36 @@ window.__ModuleLoader__.load({
       }
 
       .gp-shell {
+        display: flex;
         width: 100%;
         max-width: 1180px;
+        min-height: 0;
+        flex: 1;
+        flex-direction: column;
         margin: 0 auto;
       }
 
       .gp-hero {
         display: flex;
+        flex: none;
         align-items: flex-end;
         justify-content: space-between;
         gap: 24px;
-        margin-bottom: 26px;
-        padding-bottom: 24px;
+        margin-bottom: 22px;
+        padding-bottom: 20px;
         border-bottom: 1px solid var(--gp-border);
       }
 
       .gp-hero-main {
         min-width: 0;
+      }
+
+      .gp-hero-side {
+        display: flex;
+        flex: none;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 9px;
       }
 
       .gp-eyebrow {
@@ -234,19 +161,18 @@ window.__ModuleLoader__.load({
 
       .gp-subtitle {
         max-width: 660px;
-        margin: 11px 0 0;
+        margin: 10px 0 0;
         color: var(--gp-muted);
         font-size: 13.5px;
-        line-height: 1.75;
+        line-height: 1.7;
         text-wrap: pretty;
       }
 
       .gp-summary {
         display: inline-flex;
-        flex: none;
         align-items: center;
         gap: 9px;
-        padding: 9px 13px;
+        padding: 8px 12px;
         border: 1px solid var(--gp-border);
         border-radius: 999px;
         color: var(--gp-muted);
@@ -277,9 +203,95 @@ window.__ModuleLoader__.load({
         box-shadow: none;
       }
 
+      .gp-refresh {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 9px;
+        border: 1px solid var(--gp-border);
+        border-radius: 8px;
+        color: var(--gp-faint);
+        background: transparent;
+        font: inherit;
+        font-size: 10.5px;
+        line-height: 1.3;
+        cursor: pointer;
+        transition:
+          color 160ms ease,
+          border-color 160ms ease,
+          background 160ms ease;
+      }
+
+      .gp-refresh:hover:not(:disabled) {
+        color: var(--gp-text);
+        border-color: var(--gp-border-strong);
+        background: var(--gp-surface-2);
+      }
+
+      .gp-refresh:focus-visible,
+      .gp-add:focus-visible {
+        outline: 2px solid var(--gp-brand);
+        outline-offset: 3px;
+      }
+
+      .gp-refresh:disabled {
+        cursor: progress;
+        opacity: 0.6;
+      }
+
+      .gp-refresh svg {
+        animation: gp-spin 900ms linear infinite;
+      }
+
+      .gp-refresh:not(.is-busy) svg {
+        animation: none;
+      }
+
+      @keyframes gp-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .gp-empty {
+        flex: none;
+        margin: 0 2px 12px;
+        color: var(--gp-faint);
+        font-size: 11.5px;
+        line-height: 1.5;
+      }
+
+      .gp-scroll {
+        min-height: 180px;
+        max-height: clamp(290px, 54vh, 590px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 2px 8px 10px 2px;
+        scrollbar-width: thin;
+        scrollbar-color: color-mix(in srgb, var(--gp-brand) 38%, var(--gp-border-strong)) transparent;
+      }
+
+      .gp-scroll::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .gp-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .gp-scroll::-webkit-scrollbar-thumb {
+        border: 2px solid var(--gp-bg);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--gp-brand) 34%, var(--gp-border-strong));
+      }
+
+      .gp-scroll::-webkit-scrollbar-thumb:hover {
+        background: color-mix(in srgb, var(--gp-brand) 62%, var(--gp-border-strong));
+      }
+
       .gp-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(238px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(238px, 1fr));
         gap: 14px;
       }
 
@@ -287,7 +299,7 @@ window.__ModuleLoader__.load({
         position: relative;
         display: flex;
         min-width: 0;
-        min-height: 208px;
+        min-height: 202px;
         flex-direction: column;
         overflow: hidden;
         padding: 17px;
@@ -313,7 +325,6 @@ window.__ModuleLoader__.load({
 
       .gp-card:hover {
         transform: translateY(-2px);
-        border-color: var(--gp-border-strong);
         border-color: color-mix(in srgb, var(--gp-brand) 38%, var(--gp-border));
         box-shadow: 0 12px 32px -20px rgb(0 0 0 / 0.32);
       }
@@ -376,12 +387,16 @@ window.__ModuleLoader__.load({
 
       .gp-code {
         display: block;
+        overflow: hidden;
         margin-top: 3px;
         color: var(--gp-faint);
         font-size: 9px;
         font-weight: 650;
         line-height: 1.3;
         letter-spacing: 0.17em;
+        text-overflow: ellipsis;
+        text-transform: uppercase;
+        white-space: nowrap;
       }
 
       .gp-state {
@@ -418,12 +433,17 @@ window.__ModuleLoader__.load({
       }
 
       .gp-desc {
+        display: -webkit-box;
+        min-height: 3.2em;
         flex: 1;
+        overflow: hidden;
         margin: 13px 0 0;
         color: var(--gp-muted);
         font-size: 12.25px;
-        line-height: 1.72;
+        line-height: 1.6;
         text-wrap: pretty;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
         transition: color 180ms ease;
       }
 
@@ -436,8 +456,8 @@ window.__ModuleLoader__.load({
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        margin-top: 15px;
-        padding-top: 12px;
+        margin-top: 13px;
+        padding-top: 11px;
         border-top: 1px solid var(--gp-border);
       }
 
@@ -510,11 +530,88 @@ window.__ModuleLoader__.load({
         transform: translateX(18px);
       }
 
+      .gp-switch:disabled {
+        cursor: progress;
+        opacity: 0.55;
+      }
+
+      .gp-add {
+        grid-column: 1 / -1;
+        min-height: 86px;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 13px;
+        padding: 14px 18px;
+        border-style: dashed;
+        border-color: var(--gp-border-strong);
+        color: var(--gp-muted);
+        background: transparent;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .gp-add::after {
+        display: none;
+      }
+
+      .gp-add:hover {
+        border-color: color-mix(in srgb, var(--gp-brand) 64%, var(--gp-border-strong));
+        color: var(--gp-text);
+        background: color-mix(in srgb, var(--gp-brand) 5%, transparent);
+      }
+
+      .gp-add-plus {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        flex: none;
+        place-items: center;
+        margin-bottom: 0;
+        border: 1px dashed color-mix(in srgb, var(--gp-brand) 44%, var(--gp-border-strong));
+        border-radius: 12px;
+        color: var(--gp-brand);
+        font-size: 21px;
+        font-weight: 300;
+        line-height: 1;
+        transition:
+          border-color 180ms ease,
+          background 180ms ease;
+      }
+
+      .gp-add:hover .gp-add-plus {
+        border-color: var(--gp-brand);
+        background: color-mix(in srgb, var(--gp-brand) 8%, transparent);
+      }
+
+      .gp-add-copy {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .gp-add-title {
+        font-size: 14px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+
+      .gp-add-desc {
+        max-width: 720px;
+        color: var(--gp-faint);
+        font-size: 10.5px;
+        line-height: 1.55;
+        text-wrap: pretty;
+      }
+
       .gp-footnote {
         display: flex;
+        flex: none;
         align-items: center;
         gap: 8px;
-        margin: 18px 2px 0;
+        margin: 14px 2px 0;
         color: var(--gp-faint);
         font-size: 10.5px;
         line-height: 1.5;
@@ -524,6 +621,7 @@ window.__ModuleLoader__.load({
         content: '';
         width: 3px;
         height: 3px;
+        flex: none;
         border-radius: 50%;
         background: var(--gp-border-strong);
       }
@@ -536,11 +634,6 @@ window.__ModuleLoader__.load({
         background: var(--gp-danger);
       }
 
-      .gp-switch:disabled {
-        cursor: progress;
-        opacity: 0.55;
-      }
-
       @media (max-width: 760px) {
         .gp-hero {
           flex-direction: column;
@@ -548,14 +641,20 @@ window.__ModuleLoader__.load({
           gap: 16px;
         }
 
-        .gp-summary {
-          align-self: flex-start;
+        .gp-hero-side {
+          flex-direction: row;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+
+        .gp-scroll {
+          max-height: none;
         }
       }
 
       @media (max-width: 520px) {
         .gp-page {
-          padding-top: 24px;
+          padding-top: 22px;
         }
 
         .gp-grid {
@@ -564,6 +663,10 @@ window.__ModuleLoader__.load({
 
         .gp-card {
           min-height: 0;
+        }
+
+        .gp-add {
+          min-height: 86px;
         }
       }
 
@@ -575,25 +678,66 @@ window.__ModuleLoader__.load({
         .gp-desc,
         .gp-ready::before,
         .gp-switch,
-        .gp-thumb {
+        .gp-thumb,
+        .gp-refresh,
+        .gp-add-plus {
           transition: none;
         }
 
         .gp-card:hover {
           transform: none;
         }
+
+        .gp-refresh svg {
+          animation: none;
+        }
       }
     `;
 
-    function rosterFromEntries(entries) {
-      const next = { ...DEFAULT_ENABLED };
-      for (const role of ROLES) next[role.id] = false;
-      for (const entry of entries) {
-        if (entry && typeof entry.id === 'string' && typeof entry.enabled === 'boolean') {
-          next[entry.id] = entry.enabled;
-        }
+    function humanizeId(id) {
+      return (
+        id
+          .split(/[-_]+/)
+          .filter(Boolean)
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(' ') || id
+      );
+    }
+
+    function normalizeEntries(payload) {
+      if (!payload || payload.ok !== true || !Array.isArray(payload.entries)) {
+        throw new Error('Host returned an invalid roster payload.');
       }
-      return next;
+      return payload.entries
+        .filter((entry) => entry && typeof entry.id === 'string' && entry.id.length > 0)
+        .map((entry) => ({
+          id: entry.id,
+          name:
+            typeof entry.name === 'string' && entry.name.trim().length > 0
+              ? entry.name.trim()
+              : humanizeId(entry.id),
+          description:
+            typeof entry.description === 'string' && entry.description.trim().length > 0
+              ? entry.description.trim()
+              : '',
+          enabled: entry.enabled !== false,
+        }));
+    }
+
+    async function readJsonResponse(response) {
+      const text = await response.text();
+      let payload;
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = undefined;
+      }
+      if (!response.ok) {
+        throw new Error(
+          (payload && typeof payload.error === 'string' && payload.error) || text || `HTTP ${response.status}`,
+        );
+      }
+      return payload;
     }
 
     async function requestRoster(signal) {
@@ -603,15 +747,7 @@ window.__ModuleLoader__.load({
         headers: { accept: 'application/json' },
         signal,
       });
-      const text = await response.text();
-      if (!response.ok) {
-        throw new Error(text || `HTTP ${response.status}`);
-      }
-      const payload = JSON.parse(text);
-      if (!payload || payload.ok !== true || !Array.isArray(payload.entries)) {
-        throw new Error('Host returned an invalid roster payload.');
-      }
-      return rosterFromEntries(payload.entries);
+      return normalizeEntries(await readJsonResponse(response));
     }
 
     async function requestToggle(id, enabled) {
@@ -624,22 +760,11 @@ window.__ModuleLoader__.load({
         },
         body: JSON.stringify({ id, enabled }),
       });
-      const text = await response.text();
-      if (!response.ok) {
-        let message = text;
-        try {
-          const payload = JSON.parse(text);
-          if (payload && typeof payload.error === 'string') message = payload.error;
-        } catch {
-          // Keep the raw response text when the Host did not send JSON.
-        }
-        throw new Error(message || `HTTP ${response.status}`);
-      }
-      const payload = JSON.parse(text);
+      const payload = await readJsonResponse(response);
       if (!payload || payload.ok !== true) {
         throw new Error(payload?.error || 'Host rejected the switch update.');
       }
-      return payload;
+      return normalizeEntries(payload);
     }
 
     function useLocaleSnapshot(locale) {
@@ -690,6 +815,32 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function RefreshIcon() {
+      return h(
+        'svg',
+        {
+          width: 12,
+          height: 12,
+          viewBox: '0 0 16 16',
+          fill: 'none',
+          'aria-hidden': true,
+        },
+        h('path', {
+          d: 'M13.2 6.4A5.5 5.5 0 1 0 13.5 9',
+          stroke: 'currentColor',
+          strokeWidth: 1.4,
+          strokeLinecap: 'round',
+        }),
+        h('path', {
+          d: 'M13.6 2.9v3.7H9.9',
+          stroke: 'currentColor',
+          strokeWidth: 1.4,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+        }),
+      );
+    }
+
     function RoleSwitch({ checked, label, disabled, onChange }) {
       return h(
         'button',
@@ -706,107 +857,254 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function RoleCard({ role, enabled, pending, onToggle, t }) {
-      const name = t(role.nameKey);
-      const titleId = `gp-role-${role.id}`;
+    function RoleCard({ agent, pending, onToggle, t }) {
+      const titleId = `gp-role-${agent.id}`;
+      const name = agent.name || humanizeId(agent.id);
+      const description = agent.description || t('card.noDescription');
+      const glyph = Array.from(name)[0] || 'A';
+      const code = agent.id.replace(/[^a-z0-9]/gi, '').slice(0, 3) || 'AGT';
 
       return h(
         'article',
         {
-          className: `gp-card ${enabled ? 'is-on' : 'is-off'}`,
+          className: `gp-card ${agent.enabled ? 'is-on' : 'is-off'}`,
           'aria-labelledby': titleId,
         },
         h(
           'div',
           { className: 'gp-card-head' },
-          h('div', { className: 'gp-avatar', 'aria-hidden': true }, role.glyph),
+          h('div', { className: 'gp-avatar', 'aria-hidden': true }, glyph.toUpperCase()),
           h(
             'div',
             { className: 'gp-heading' },
-            h('h2', { id: titleId, className: 'gp-name' }, name),
-            h('span', { className: 'gp-code' }, role.code),
+            h('h2', { id: titleId, className: 'gp-name', title: name }, name),
+            h('span', { className: 'gp-code', title: agent.id }, code),
           ),
           h(
             'span',
-            { className: `gp-state ${enabled ? 'is-on' : ''}` },
+            { className: `gp-state ${agent.enabled ? 'is-on' : ''}` },
             h('span', { className: 'gp-state-dot', 'aria-hidden': true }),
-            enabled ? t('status.on') : t('status.off'),
+            agent.enabled ? t('status.on') : t('status.off'),
           ),
         ),
-        h('p', { className: 'gp-desc' }, t(role.descKey)),
+        h('p', { className: 'gp-desc', title: description }, description),
         h(
           'div',
           { className: 'gp-foot' },
-          h('span', { className: 'gp-ready' }, enabled ? t('card.ready') : t('card.paused')),
+          h('span', { className: 'gp-ready' }, agent.enabled ? t('card.ready') : t('card.paused')),
           h(RoleSwitch, {
-            checked: enabled,
-            label: `${enabled ? t('card.disable') : t('card.enable')}${name}`,
+            checked: agent.enabled,
+            label: `${agent.enabled ? t('card.disable') : t('card.enable')}${name}`,
             disabled: Boolean(pending),
-            onChange: () => onToggle(role.id),
+            onChange: () => onToggle(agent.id),
           }),
         ),
       );
     }
 
-    function GamePlannerPanel({ locale }) {
+    function AddAgentCard({ onClick, t }) {
+      return h(
+        'button',
+        {
+          type: 'button',
+          className: 'gp-card gp-add',
+          onClick,
+          'aria-label': t('card.newTitle'),
+        },
+        h('span', { className: 'gp-add-plus', 'aria-hidden': true }, '+'),
+        h(
+          'span',
+          { className: 'gp-add-copy' },
+          h('span', { className: 'gp-add-title' }, t('card.newTitle')),
+          h('span', { className: 'gp-add-desc' }, t('card.newDesc')),
+        ),
+      );
+    }
+
+    function isVisible(element) {
+      if (!element || element.closest('.gp-page')) return false;
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 80 || rect.height < 18) return false;
+      const style = window.getComputedStyle(element);
+      return style.visibility !== 'hidden' && style.display !== 'none';
+    }
+
+    function findComposer() {
+      const textareas = Array.from(document.querySelectorAll('textarea')).filter(isVisible);
+      if (textareas.length > 0) {
+        return textareas.sort((left, right) => right.getBoundingClientRect().width - left.getBoundingClientRect().width)[0];
+      }
+      const editables = Array.from(
+        document.querySelectorAll('[contenteditable="true"], [contenteditable="plaintext-only"], [role="textbox"]'),
+      ).filter(isVisible);
+      return editables[0] || null;
+    }
+
+    function waitForComposer(timeout = 3000) {
+      return new Promise((resolve) => {
+        const started = Date.now();
+        const poll = () => {
+          const composer = findComposer();
+          if (composer) {
+            resolve(composer);
+            return;
+          }
+          if (Date.now() - started >= timeout) {
+            resolve(null);
+            return;
+          }
+          window.setTimeout(poll, 80);
+        };
+        poll();
+      });
+    }
+
+    function setComposerValue(element, value) {
+      if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
+        const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+        if (setter) setter.call(element, value);
+        else element.value = value;
+
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+        if (typeof element.setSelectionRange === 'function') {
+          element.setSelectionRange(value.length, value.length);
+        }
+        return;
+      }
+
+      element.focus();
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      const inserted = document.execCommand('insertText', false, value);
+      if (!inserted) {
+        element.textContent = value;
+        element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+      }
+    }
+
+    async function startCreateAgent(layout) {
+      try {
+        await navigator.clipboard?.writeText(NEW_AGENT_PROMPT);
+      } catch {
+        // Clipboard is a fallback only; the composer fill is the primary path.
+      }
+
+      layout.selectPanel(null);
+      const composer = await waitForComposer();
+      if (!composer) {
+        window.alert(`未找到主输入框。创建提示词已尝试复制到剪贴板，请直接粘贴发送：\n\n${NEW_AGENT_PROMPT}`);
+        return;
+      }
+
+      composer.focus();
+      setComposerValue(composer, NEW_AGENT_PROMPT);
+    }
+
+    function AgentHubPanel({ locale, layout }) {
       useLocaleSnapshot(locale);
       const t = locale.bind(NS);
-      const [enabled, setEnabled] = React.useState(() => ({ ...DEFAULT_ENABLED }));
+      const [agents, setAgents] = React.useState([]);
       const [pending, setPending] = React.useState({});
       const [phase, setPhase] = React.useState('loading');
       const [error, setError] = React.useState('');
-      const enabledCount = ROLES.reduce((count, role) => count + (enabled[role.id] ? 1 : 0), 0);
+      const [refreshing, setRefreshing] = React.useState(false);
+      const [reloadToken, setReloadToken] = React.useState(0);
+      const createLock = React.useRef(false);
 
       React.useEffect(() => {
+        let active = true;
+        let timer;
         const controller = new AbortController();
-        let alive = true;
-        requestRoster(controller.signal)
-          .then((next) => {
-            if (!alive) return;
-            setEnabled(next);
+
+        const load = async (background) => {
+          if (!background) setRefreshing(true);
+          try {
+            const next = await requestRoster(controller.signal);
+            if (!active) return;
+            setAgents(next);
             setPhase('ready');
             setError('');
-          })
-          .catch((reason) => {
-            if (!alive || reason?.name === 'AbortError') return;
-            setPhase('error');
-            setError(String(reason?.message ?? reason));
-          });
-        return () => {
-          alive = false;
-          controller.abort();
-        };
-      }, []);
-
-      const toggleRole = React.useCallback(
-        async (id) => {
-          if (pending[id] || phase === 'loading') return;
-          const next = !enabled[id];
-
-          setEnabled((current) => ({ ...current, [id]: next }));
-          setPending((current) => ({ ...current, [id]: true }));
-          setError('');
-
-          try {
-            const payload = await requestToggle(id, next);
-            if (Array.isArray(payload.entries)) {
-              setEnabled(rosterFromEntries(payload.entries));
-            }
-            setPhase('ready');
           } catch (reason) {
-            setEnabled((current) => ({ ...current, [id]: !next }));
+            if (!active || reason?.name === 'AbortError') return;
             setPhase('error');
             setError(String(reason?.message ?? reason));
           } finally {
-            setPending((current) => {
-              const updated = { ...current };
+            if (active && !background) setRefreshing(false);
+          }
+        };
+
+        load(false);
+        timer = window.setInterval(() => {
+          if (document.visibilityState === 'visible') load(true);
+        }, POLL_MS);
+
+        const onVisibility = () => {
+          if (document.visibilityState === 'visible') load(true);
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+
+        return () => {
+          active = false;
+          controller.abort();
+          window.clearInterval(timer);
+          document.removeEventListener('visibilitychange', onVisibility);
+        };
+      }, [reloadToken]);
+
+      const enabledCount = agents.reduce((count, agent) => count + (agent.enabled ? 1 : 0), 0);
+
+      const toggleAgent = React.useCallback(
+        async (id) => {
+          if (pending[id]) return;
+          const current = agents.find((agent) => agent.id === id);
+          if (!current) return;
+          const nextEnabled = !current.enabled;
+
+          setAgents((list) =>
+            list.map((agent) => (agent.id === id ? { ...agent, enabled: nextEnabled } : agent)),
+          );
+          setPending((currentPending) => ({ ...currentPending, [id]: true }));
+          setError('');
+
+          try {
+            const next = await requestToggle(id, nextEnabled);
+            setAgents(next);
+            setPhase('ready');
+          } catch (reason) {
+            setAgents((list) =>
+              list.map((agent) => (agent.id === id ? { ...agent, enabled: current.enabled } : agent)),
+            );
+            setPhase('error');
+            setError(String(reason?.message ?? reason));
+          } finally {
+            setPending((currentPending) => {
+              const updated = { ...currentPending };
               delete updated[id];
               return updated;
             });
           }
         },
-        [enabled, pending, phase],
+        [agents, pending],
       );
+
+      const createAgent = React.useCallback(async () => {
+        if (createLock.current) return;
+        createLock.current = true;
+        try {
+          await startCreateAgent(layout);
+        } catch (reason) {
+          window.alert(`无法打开主输入框：${String(reason?.message ?? reason)}`);
+        } finally {
+          window.setTimeout(() => {
+            createLock.current = false;
+          }, 800);
+        }
+      }, [layout]);
 
       const footnote = error
         ? `${t('page.error')}${error}`
@@ -836,32 +1134,55 @@ window.__ModuleLoader__.load({
               ),
               h(
                 'div',
-                {
-                  className: `gp-summary ${enabledCount === 0 ? 'is-idle' : ''}`,
-                  'aria-live': 'polite',
-                },
-                h('span', { className: 'gp-pulse', 'aria-hidden': true }),
+                { className: 'gp-hero-side' },
                 h(
-                  'span',
-                  null,
-                  h('strong', null, String(enabledCount)),
-                  ` / ${ROLES.length} `,
-                  t('page.activeUnit'),
+                  'div',
+                  {
+                    className: `gp-summary ${enabledCount === 0 ? 'is-idle' : ''}`,
+                    'aria-live': 'polite',
+                  },
+                  h('span', { className: 'gp-pulse', 'aria-hidden': true }),
+                  h(
+                    'span',
+                    null,
+                    h('strong', null, String(enabledCount)),
+                    ` / ${agents.length} `,
+                    t('page.activeUnit'),
+                  ),
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: `gp-refresh ${refreshing ? 'is-busy' : ''}`,
+                    onClick: () => setReloadToken((value) => value + 1),
+                    disabled: refreshing,
+                    'aria-label': t('page.refresh'),
+                  },
+                  h(RefreshIcon),
+                  refreshing ? t('page.refreshing') : t('page.refresh'),
                 ),
               ),
             ),
+            phase === 'ready' && agents.length === 0
+              ? h('p', { className: 'gp-empty' }, t('page.empty'))
+              : null,
             h(
-              'section',
-              { className: 'gp-grid', 'aria-label': t('page.title') },
-              ROLES.map((role) =>
-                h(RoleCard, {
-                  key: role.id,
-                  role,
-                  enabled: Boolean(enabled[role.id]),
-                  pending: Boolean(pending[role.id]),
-                  onToggle: toggleRole,
-                  t,
-                }),
+              'div',
+              { className: 'gp-scroll' },
+              h(
+                'section',
+                { className: 'gp-grid', 'aria-label': t('page.title') },
+                agents.map((agent) =>
+                  h(RoleCard, {
+                    key: agent.id,
+                    agent,
+                    pending: Boolean(pending[agent.id]),
+                    onToggle: toggleAgent,
+                    t,
+                  }),
+                ),
+                h(AddAgentCard, { onClick: createAgent, t }),
               ),
             ),
             h(
@@ -878,14 +1199,14 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'locale'],
+      inject: ['slots', 'locale', 'layout'],
       apply(ctx) {
         const t = ctx.locale.bind(NS);
 
         ctx.effect(() => ctx.locale.register(NS, 'zh', ZH));
         ctx.effect(() => ctx.locale.register(NS, 'en', EN));
 
-        const Panel = () => h(GamePlannerPanel, { locale: ctx.locale });
+        const Panel = () => h(AgentHubPanel, { locale: ctx.locale, layout: ctx.layout });
 
         ctx.slots.inject('sidebar.panellist', () =>
           ctx.slots.register(

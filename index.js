@@ -1,13 +1,16 @@
 /**
  * Host half of dsh-game-planner-panel.
  *
- * The browser panel owns the roster UI. This half owns the two things the
- * browser cannot do: it exposes a small authenticated JSON endpoint on the
- * DSH web server, and it flips the `enabled` flag of the matching roster file
- * under `~/.dsh/subagents/`. `dsh-subagent-library` watches that directory,
- * so a successful write immediately adds/removes the role from its catalog.
+ * The panel is a generic Agent Hub. This half scans every YAML file under
+ * `~/.dsh/subagents/` and exposes the roster to the browser through two
+ * authenticated JSON endpoints. It never hard-codes role ids: adding a YAML
+ * file is enough for the card to appear after the next refresh.
+ *
+ * `dsh-subagent-library` reads the same directory on every tool call, so
+ * rewriting one file's `enabled` flag enables or disables that agent without
+ * restarting DSH.
  */
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -18,30 +21,10 @@ export const inject = ['webServer', 'connection'];
 
 const BASE_PATH = '/plugins/game-planner';
 const MAX_BODY_BYTES = 8 * 1024;
-
-/**
- * UI id -> roster file. The ids are also the shared vocabulary between the two
- * halves, so the Client sends exactly one of these values.
- */
-const ROSTER = [
-  { id: 'system', file: 'system-designer.yaml' },
-  { id: 'combat', file: 'combat-designer.yaml' },
-  { id: 'level', file: 'level-designer.yaml' },
-  { id: 'numeric', file: 'numerical-designer.yaml' },
-  { id: 'economy', file: 'economy-designer.yaml' },
-  { id: 'narrative', file: 'narrative-designer.yaml' },
-  { id: 'engineering', file: 'programmer-reviewer.yaml' },
-  { id: 'art', file: 'artist-reviewer.yaml' },
-];
-
-const ROSTER_BY_ID = new Map(ROSTER.map((role) => [role.id, role]));
+const YAML_FILE = /\.ya?ml$/i;
 
 function rosterDir() {
   return join(homedir(), '.dsh', 'subagents');
-}
-
-function rosterPath(role) {
-  return join(rosterDir(), role.file);
 }
 
 function sendJson(res, status, payload) {
@@ -74,24 +57,146 @@ function parseEnabled(text) {
   return match ? match[1] === 'true' : true;
 }
 
-async function readOne(role) {
-  try {
-    const text = await readFile(rosterPath(role), 'utf8');
-    return { id: role.id, file: role.file, present: true, enabled: parseEnabled(text) };
-  } catch (error) {
-    if (error?.code === 'ENOENT') {
-      return { id: role.id, file: role.file, present: false, enabled: false };
+function humanizeId(id) {
+  return id
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function unquote(raw) {
+  const value = raw.trim();
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value.slice(1, -1);
     }
+  }
+  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1).replace(/''/g, "'");
+  }
+  return value;
+}
+
+/**
+ * Minimal top-level YAML reader for the two display fields we need. It handles
+ * inline strings, quoted strings and `|` / `>` block scalars. The whole file is
+ * still owned by dsh-subagent-library; this is deliberately not a YAML parser.
+ */
+function parseTextValue(text, key) {
+  const lines = text.split(/\r?\n/);
+  const prefix = `${key}:`;
+  let start = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].startsWith(prefix)) {
+      start = index;
+      break;
+    }
+  }
+  if (start === -1) return '';
+
+  const inline = lines[start].slice(prefix.length).trim();
+  if (inline && !/^[|>][+-]?$/.test(inline)) {
+    return unquote(inline);
+  }
+  if (!/^[|>]/.test(inline)) return '';
+
+  const block = [];
+  let minIndent = Number.POSITIVE_INFINITY;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line.trim()) {
+      block.push({ text: '', indent: 0 });
+      continue;
+    }
+    const indent = /^ */.exec(line)[0].length;
+    if (indent === 0) break;
+    minIndent = Math.min(minIndent, indent);
+    block.push({ text: line, indent });
+  }
+
+  if (block.length === 0) return '';
+  const body = block
+    .map(({ text: line }) => (line ? line.slice(Number.isFinite(minIndent) ? minIndent : 0) : ''))
+    .join('\n');
+
+  if (!inline.startsWith('>')) return body.trim();
+  return body
+    .split(/\n{2,}/)
+    .map((paragraph) =>
+      paragraph
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join(' '),
+    )
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
+}
+
+function parseDisplayName(text, id) {
+  const explicit = parseTextValue(text, 'name');
+  if (explicit) return explicit;
+
+  const comment = /^#\s*(.+?)\s*$/m.exec(text)?.[1];
+  if (comment) {
+    const candidate = comment.split(/\s+[/·|]\s+/)[0].trim();
+    if (candidate && candidate.length <= 64) return candidate;
+  }
+  return humanizeId(id);
+}
+
+async function listRosterFiles() {
+  try {
+    const dirents = await readdir(rosterDir(), { withFileTypes: true });
+    return dirents
+      .filter(
+        (dirent) =>
+          dirent.isFile() && YAML_FILE.test(dirent.name) && !dirent.name.startsWith('_') && !dirent.name.startsWith('.'),
+      )
+      .map((dirent) => dirent.name)
+      .sort((left, right) => left.localeCompare(right));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return [];
     throw error;
   }
 }
 
 async function readRoster() {
-  const entries = await Promise.all(ROSTER.map((role) => readOne(role)));
-  return { ok: true, dir: rosterDir(), entries };
+  const dir = rosterDir();
+  const files = await listRosterFiles();
+  const entries = [];
+
+  for (const file of files) {
+    try {
+      const text = await readFile(join(dir, file), 'utf8');
+      const id = file.replace(YAML_FILE, '');
+      entries.push({
+        id,
+        file,
+        name: parseDisplayName(text, id),
+        description: parseTextValue(text, 'description') || '—',
+        enabled: parseEnabled(text),
+      });
+    } catch {
+      // A single unreadable file must not take down the entire roster.
+    }
+  }
+
+  return { ok: true, dir, entries };
 }
 
-/** Serialize toggles so two rapid clicks cannot interleave read-modify-write. */
+/** Resolve an id by matching the file stem, never by joining user input. */
+async function findRosterFile(id) {
+  if (typeof id !== 'string' || id.length === 0 || id.length > 128 || /[\\/]/.test(id)) return undefined;
+  const files = await listRosterFiles();
+  return files.find((file) => file.replace(YAML_FILE, '') === id);
+}
+
+/** Serialize writes so two rapid clicks cannot interleave read-modify-write. */
 let writeChain = Promise.resolve();
 function enqueueWrite(operation) {
   const run = writeChain.then(operation, operation);
@@ -100,20 +205,20 @@ function enqueueWrite(operation) {
 }
 
 async function setEnabled(id, enabled) {
-  const role = ROSTER_BY_ID.get(id);
-  if (!role) {
-    const error = new Error(`unknown role id: ${id}`);
-    error.statusCode = 400;
+  const file = await findRosterFile(id);
+  if (!file) {
+    const error = new Error(`subagent YAML not found: ${id}`);
+    error.statusCode = 404;
     throw error;
   }
 
-  const path = rosterPath(role);
+  const path = join(rosterDir(), file);
   let text;
   try {
     text = await readFile(path, 'utf8');
   } catch (error) {
     if (error?.code === 'ENOENT') {
-      const missing = new Error(`roster file not found: ${path}`);
+      const missing = new Error(`subagent YAML not found: ${path}`);
       missing.statusCode = 404;
       throw missing;
     }
@@ -154,7 +259,7 @@ export function apply(ctx) {
           try {
             sendJson(res, 200, await readRoster());
           } catch (error) {
-            ctx.logger?.warn?.(`game-planner: failed to read roster: ${String(error)}`);
+            ctx.logger?.warn?.(`game-planner: failed to scan roster: ${String(error)}`);
             sendJson(res, 500, { ok: false, error: String(error?.message ?? error) });
           }
         },
